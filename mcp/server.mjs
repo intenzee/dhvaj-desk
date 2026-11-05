@@ -519,13 +519,70 @@ server.registerTool(
   tool(async ({ dependencyId, ttlHours = 72 }) => {
     const dep = items(await portal.get('/work/client-dependencies')).find((d) => d.id === dependencyId);
     if (!dep) throw new Error('No open client request with that id that you can see.');
-    const link = await portal.post(`/engagements/${dep.engagementId}/client-dependencies/${dependencyId}/upload-links`, { ttlHours });
+    const link = await portal
+      .post(`/engagements/${dep.engagementId}/client-dependencies/${dependencyId}/upload-links`, { ttlHours })
+      .catch((e) => {
+        if (e.status === 403)
+          e.message +=
+            ' — a fresh link for an existing request needs a manager; a new request made with request_document carries its own link.';
+        throw e;
+      });
     return ok({
       request: dep.requestedInfo,
       client: dep.entityName,
       uploadUrl: pageUrl(`/client-upload/${link.token}`),
       expiresAt: link.expiresAt,
       maxUploads: link.maxUploads,
+    });
+  }),
+);
+
+server.registerTool(
+  'request_document',
+  {
+    title: 'Ask the client for a document',
+    description:
+      'Open a request to the client for one of a filing’s documents (its slot, e.g. "sales register"), with ' +
+      'a secure, expiring upload-only link: the client uploads without logging in and the file lands in the ' +
+      'slot. Nothing is sent to the client: put the link in the reminder draft and wait for a person’s yes.',
+    inputSchema: {
+      ...filingRef,
+      document: z.string().describe('The slot: its code (SALES_REGISTER) or words from its name ("sales register")'),
+      requestedInfo: z.string().max(500).optional().describe('What exactly to send, in the client’s words'),
+      ttlHours: z.number().int().min(1).max(720).optional().describe('Link life, hours (default 72)'),
+    },
+  },
+  tool(async ({ document, requestedInfo, ttlHours = 72, ...ref }) => {
+    const { id, ws } = await resolveFiling(ref);
+    const want = document.trim().toLowerCase();
+    const words = want.split(/\s+/);
+    const slot =
+      ws.slots.find((x) => x.slotCode.toLowerCase() === want.replace(/\s+/g, '_')) ??
+      ws.slots.find((x) => words.every((w) => x.label.toLowerCase().includes(w)));
+    if (!slot)
+      return fail(`This filing has no document called "${document}".`, {
+        documents: ws.slots.map((x) => ({ code: x.slotCode, name: x.label, received: x.documents.length > 0 })),
+      });
+    if (slot.documents.length) return fail(`${slot.label}: the client has already sent it.`, { filing: filingSummary(id, ws) });
+    if (slot.openRequest?.hasLink)
+      return fail(
+        `${slot.label} is already requested (since ${slot.openRequest.requestedAt.slice(0, 10)}) and has its upload link. ` +
+          'A fresh link for it needs a manager (upload_link); or chase it with chase_preview.',
+        { dependencyId: slot.openRequest.dependencyId, filing: filingSummary(id, ws) },
+      );
+    const r = await portal.post(`/compliance-instances/${id}/slots/${slot.slotCode}/request`, {
+      ...(requestedInfo ? { requestedInfo } : {}),
+      ttlHours,
+    });
+    const open = r.workspace.slots.find((x) => x.slotCode === slot.slotCode)?.openRequest;
+    return ok({
+      requested: slot.label,
+      dependencyId: open?.dependencyId ?? null,
+      uploadUrl: r.link ? pageUrl(`/client-upload/${r.link.token}`) : null,
+      expiresAt: r.link?.expiresAt ?? null,
+      note: r.link ? undefined : 'Client upload is switched off in the portal: the request stands without a link.',
+      filing: filingSummary(id, r.workspace),
+      next: 'chase_preview, then post the draft with uploadUrl and wait for a person’s *send*.',
     });
   }),
 );

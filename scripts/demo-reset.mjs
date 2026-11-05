@@ -6,7 +6,8 @@
 //     in dhvaj-reviewer's To Review inbox (the #review-queue scene).
 //   - Sharma's October PF return: open and nobody's yet, for the
 //     "give the PF return to Riya" scene in #compliance-desk.
-//   - The October sales register request stays open (the #client-chase scene).
+//   - Sharma's October sales register: not asked for yet, so dhvaj-chaser
+//     asks for it live with an upload link (the #client-chase scene).
 //   - The Mehtas: no open notice yet, so Anil Mehta's 143(1) can be recorded
 //     live in #notices-itr; earlier demo runs' notices are closed as dropped.
 //
@@ -64,21 +65,38 @@ for (let i = 0; i < 8; i++) {
   }
 }
 
-// 2. PF Oct: left open for the scene; just report who has it.
+// 2. PF Oct (ECR): back with Manager X, for "give the PF return to Riya".
 try {
   const pf = cal.find((i) => /PF|ECR/i.test(i.formLabel) && i.periodKey === '2026-10');
   if (pf) {
-    const ws = await mp.get(`/compliance-instances/${pf.id}`);
+    let ws = await mp.get(`/compliance-instances/${pf.id}`);
+    if (/^Riya/.test(ws.task?.assigneeName ?? '')) {
+      const r = await mp.post('/compliance/runs/assign', { instanceIds: [pf.id], preparerId: person(/^Manager X/) });
+      if (r.failed?.length) throw new Error(r.failed.map((f) => f.message).join('; '));
+      ws = await mp.get(`/compliance-instances/${pf.id}`);
+    }
     log(`· ${ws.instance.formLabel} Oct 2026: ${ws.task?.assigneeName ? `with ${ws.task.assigneeName}` : 'nobody yet'} (${ws.task?.status ?? ws.instance.workflowStatus})`);
   }
 } catch (e) {
   log(`· PF return: ${e.message}`);
 }
 
-// 3. Sales register request still open?
+// 3. October sales register: not asked for yet, so dhvaj-chaser asks for it
+//    live (request_document) and its reminder carries a fresh upload link.
 const g1 = await mp.get(`/compliance-instances/${filing('GSTR-1', '2026-10')}`);
 const slot = g1.slots?.find((s) => s.slotCode === 'SALES_REGISTER');
-log(slot?.openRequest ? '✓ sales register request is open' : '· sales register request is not open (run npm run seed)');
+if (slot?.documents?.length) log('· the October sales register is already uploaded (re-seed for a clean chase scene)');
+else if (slot?.openRequest) {
+  const engId = g1.instance.engagementId;
+  const depId = slot.openRequest.dependencyId;
+  const dep = await mp.get(`/engagements/${engId}/client-dependencies/${depId}`);
+  await mp.post(`/engagements/${engId}/client-dependencies/${depId}/close`, {
+    status: 'cancelled',
+    reason: 'Demo reset: the chaser asks for it again',
+    version: dep.version,
+  });
+  log('✓ October sales register request cancelled — dhvaj-chaser asks for it live');
+} else log('✓ October sales register not asked for yet — dhvaj-chaser asks for it live');
 
 // 4. The Mehtas: close notices left open by earlier runs.
 const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);

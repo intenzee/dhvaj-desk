@@ -12,7 +12,7 @@
 // channel. `--create-rooms` makes any missing room (for trying it out without
 // Switch Console).
 
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { signIn } from './gateway.mjs';
@@ -23,13 +23,34 @@ const createRooms = process.argv.includes('--create-rooms');
 
 const { url: URL_, gw } = await signIn();
 
-const agent = await gw('POST', '/agents/register-other', {
-  name: 'dhvaj-portal',
-  display_name: 'Dhvaj Portal',
-  description: 'The Dhvaj Portal itself: posts what is due, client uploads, reviews and sign-offs',
-  overwrite: true,
-});
-console.log(`✓ dhvaj-portal registered (${agent.id})`);
+// Keep dhvaj-portal's key while it still works, so a redeploy of the template
+// needs no restart of the portal API. --new-key registers it afresh.
+async function savedAgent() {
+  if (process.argv.includes('--new-key')) return null;
+  try {
+    const saved = JSON.parse(await readFile(path.join(ROOT, '.switch.json'), 'utf8'));
+    if (saved.url !== URL_) return null;
+    const r = await fetch(`${URL_}/agents/${saved.agentId}/ops/list_rooms`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${saved.apiKey}`, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    return r.ok ? { id: saved.agentId, api_key: saved.apiKey } : null;
+  } catch {
+    return null;
+  }
+}
+let agent = await savedAgent();
+if (agent) console.log(`✓ dhvaj-portal already registered (${agent.id}); its key still works`);
+else {
+  agent = await gw('POST', '/agents/register-other', {
+    name: 'dhvaj-portal',
+    display_name: 'Dhvaj Portal',
+    description: 'The Dhvaj Portal itself: posts what is due, client uploads, reviews and sign-offs',
+    overwrite: true,
+  });
+  console.log(`✓ dhvaj-portal registered (${agent.id}) — restart the portal API with the new key`);
+}
 
 const existing = await gw('GET', '/rooms');
 const rooms = {};
@@ -42,7 +63,16 @@ for (const name of ROOMS) {
     room = await gw('POST', '/rooms', { name, description: `Dhvaj Desk — #${name}`, agent_ids: [agent.id] });
     console.log(`✓ #${name} created`);
   } else if (room) {
-    await gw('POST', `/rooms/${room.id}/agents`, { agent_ids: [agent.id] });
+    // Just after a deploy Switch may still be setting the room up: retry.
+    for (let i = 1; ; i++) {
+      try {
+        await gw('POST', `/rooms/${room.id}/agents`, { agent_ids: [agent.id] });
+        break;
+      } catch (e) {
+        if (i >= 5 || e.status < 500) throw e;
+        await new Promise((r) => setTimeout(r, 3000 * i));
+      }
+    }
     console.log(`✓ #${name}: dhvaj-portal added`);
   } else {
     console.log(`· #${name} not found (deploy the template, or pass --create-rooms)`);

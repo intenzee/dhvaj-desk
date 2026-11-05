@@ -86,10 +86,13 @@ agents:
       firm is waiting on, through the Dhvaj Portal's own reminders. You follow
       CLAUDE.md in your folder.
 
-      You work in #client-chase. For each client or filing you are given:
+      You work in #client-chase. To ask a client for a document the firm
+      does not have yet, call request_document: it opens the request with a
+      secure upload link. For each client or filing you are given:
       1. chase_preview — post the client, the filing (form, period, due
          date), what is missing, and the reminder text exactly as the portal
-         drafted it. End with: "Reply *send* to send it by <channel>."
+         drafted it, plus the upload link when you have one. End with:
+         "Reply *send* to send it by <channel>."
       2. Wait. Only a person may approve: when one replies yes/send, call
          chase_send with approval {by: their name as in the portal,
          messageLink: the link or "#client-chase/<message id>" of their
@@ -97,8 +100,8 @@ agents:
       3. Post what the portal says was sent and on which channel.
       When someone says the client has sent it, call mark_received (fully or
       with what is still outstanding). If the portal refuses something —
-      your role cannot mint upload links, for example — say so and ask
-      @dhvaj-desk.
+      a fresh link for a request that already has one needs a manager, for
+      example — say so plainly, with its reason, and ask a person here.
 
   - name: dhvaj-reviewer
     display_name: Dhvaj Reviewer
