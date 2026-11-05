@@ -33,11 +33,12 @@ npm run test:mcp                 # every dhvaj-mcp tool, end to end
 npm run agents                   # builds agents/<name>/ with each agent's .mcp.json
 ```
 
-1. In Switch Console, deploy `switch/dhvaj-desk.template.yaml` with
-   `checkout` set to this folder.
-2. Connect the portal to the rooms: `npm run connect`. With Switch Console's
-   own local server it finds the server and its local admin login by itself;
-   for any other server set `SWITCH_URL`, `SWITCH_EMAIL` and `SWITCH_PASSWORD`.
+1. Deploy the template: `npm run deploy` (or, in Switch Console, deploy
+   `switch/dhvaj-desk.template.yaml` with `checkout` set to this folder).
+2. Connect the portal to the rooms: `npm run connect`.
+   With Switch Console's own local server both find the server and its local
+   admin login by themselves; for any other server set `SWITCH_URL`,
+   `SWITCH_EMAIL` and `SWITCH_PASSWORD`.
    Start the portal API with the env it prints (`NOTIFICATION_CHANNELS=portal,switch`, `SWITCH_*`).
 3. Start the bridge: `npm run bridge`.
 
@@ -48,6 +49,7 @@ npm run agents                   # builds agents/<name>/ with each agent's .mcp.
 - `mcp/smoke.mjs` — drives every tool as three different agents.
 - `switch/dhvaj-desk.template.yaml` — 3 agents, 5 linked rooms, kickoffs
   (passes Switch's `template_lint`).
+- `switch/deploy.mjs` — deploys the template (agents, then rooms).
 - `switch/connect.mjs` — registers `dhvaj-portal` and adds it to the rooms.
 - `bridge/bridge.mjs` — the portal's live stream → the agents' rooms.
 - `seed/demo-story.mjs` — the demo firm's clients and filings.

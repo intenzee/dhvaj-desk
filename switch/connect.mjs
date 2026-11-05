@@ -12,60 +12,16 @@
 // channel. `--create-rooms` makes any missing room (for trying it out without
 // Switch Console).
 
-import { readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { signIn } from './gateway.mjs';
 
 export const ROOMS = ['firm-ops', 'compliance-desk', 'client-chase', 'review-queue', 'partner-signoff', 'notices-itr'];
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-
-// Switch Console's own local server (macOS): its ports and its local admin
-// login live in Console's data folder. Used only when SWITCH_URL / SWITCH_EMAIL
-// / SWITCH_PASSWORD are not given; the password is never printed.
-const CONSOLE_DIR = path.join(homedir(), 'Library', 'Application Support', 'switchdash', 'local-switch-server');
-function consoleLocal() {
-  try {
-    const ports = JSON.parse(readFileSync(path.join(CONSOLE_DIR, 'ports.json'), 'utf8'));
-    const env = Object.fromEntries(
-      readFileSync(path.join(CONSOLE_DIR, 'native', 'run', 'switch-core.env'), 'utf8')
-        .split('\n')
-        .map((l) => /^([A-Z_]+)=(.*)$/.exec(l.trim()))
-        .filter(Boolean)
-        .map(([, k, v]) => [k, v.replace(/^(['"])(.*)\1$/, '$2')]),
-    );
-    return { url: `http://127.0.0.1:${ports.api}`, email: env.GATEWAY_ADMIN_EMAIL, password: env.GATEWAY_ADMIN_PASSWORD };
-  } catch {
-    return null;
-  }
-}
-const local = process.env.SWITCH_URL ? null : consoleLocal();
-if (local) console.log(`Using Switch Console's local server at ${local.url}`);
-const URL_ = (process.env.SWITCH_URL || local?.url || 'http://localhost:8000').replace(/\/$/, '');
 const createRooms = process.argv.includes('--create-rooms');
 
-let cookie = '';
-async function gw(method, p, body) {
-  const res = await fetch(`${URL_}/gateway${p}`, {
-    method,
-    headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const set = res.headers.getSetCookie?.() ?? [];
-  if (set.length) cookie = set.map((c) => c.split(';')[0]).join('; ');
-  const text = await res.text();
-  if (!res.ok) throw new Error(`${method} /gateway${p} → ${res.status}: ${text.slice(0, 300)}`);
-  return text ? JSON.parse(text) : null;
-}
-
-const email = process.env.SWITCH_EMAIL || local?.email;
-const password = process.env.SWITCH_PASSWORD || local?.password;
-if (!email || !password) {
-  console.error('Set SWITCH_EMAIL and SWITCH_PASSWORD (your Switch login).');
-  process.exit(1);
-}
-await gw('POST', '/auth/login', { email, password });
+const { url: URL_, gw } = await signIn();
 
 const agent = await gw('POST', '/agents/register-other', {
   name: 'dhvaj-portal',

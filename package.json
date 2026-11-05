@@ -13,7 +13,8 @@
     "seed": "node seed/demo-story.mjs",
     "test:mcp": "node mcp/smoke.mjs",
     "agents": "node scripts/make-agents.mjs",
-    "connect": "node switch/connect.mjs"
+    "connect": "node switch/connect.mjs",
+    "deploy": "node switch/deploy.mjs"
   },
   "license": "Apache-2.0",
   "dependencies": {
