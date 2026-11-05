@@ -186,7 +186,10 @@ function filingSummary(id, ws) {
 const approvalSchema = z
   .object({
     by: z.string().min(2).describe('The full name of the person who approved, exactly as in the portal'),
-    messageLink: z.string().url().describe('A link to their approving message in the chat room'),
+    messageLink: z
+      .string()
+      .min(6)
+      .describe('A link to their approving message (its permalink), or "#room/<message id>" when there is no link'),
   })
   .describe('REQUIRED for anything sent to a client: who approved it in chat, and the link to their message');
 

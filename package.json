@@ -11,7 +11,8 @@
     "mcp": "node mcp/server.mjs",
     "bridge": "node bridge/bridge.mjs",
     "seed": "node seed/demo-story.mjs",
-    "test:mcp": "node mcp/smoke.mjs"
+    "test:mcp": "node mcp/smoke.mjs",
+    "agents": "node scripts/make-agents.mjs"
   },
   "license": "Apache-2.0",
   "dependencies": {
