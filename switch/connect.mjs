@@ -56,7 +56,15 @@ if (Object.keys(rooms).length < ROOMS.length) {
   console.log(`\nRooms on this Switch server: ${names.length ? names.map((n) => `#${n}`).join(', ') : 'none yet'}`);
 }
 
-const out = { url: URL_, agentId: agent.id, apiKey: agent.api_key, rooms };
+// Which agent each kind of portal post asks to act: Switch hands an agent only
+// the messages that @mention it.
+export const MENTIONS = {
+  task_review_requested: 'dhvaj-reviewer',
+  document_uploaded: 'dhvaj-chaser',
+  notice_received: 'dhvaj-notices',
+};
+
+const out = { url: URL_, agentId: agent.id, apiKey: agent.api_key, rooms, mentions: MENTIONS };
 await writeFile(path.join(ROOT, '.switch.json'), `${JSON.stringify(out, null, 2)}\n`, { mode: 0o600 });
 console.log(`\nSaved .switch.json. Start the portal API with:\n`);
 console.log(`NOTIFICATION_CHANNELS=portal,switch`);
@@ -64,3 +72,4 @@ console.log(`SWITCH_URL=${URL_}`);
 console.log(`SWITCH_AGENT_ID=${agent.id}`);
 console.log(`SWITCH_API_KEY=<apiKey in .switch.json>`);
 console.log(`SWITCH_ROOMS='${JSON.stringify(rooms)}'`);
+console.log(`SWITCH_MENTIONS='${JSON.stringify(MENTIONS)}'`);

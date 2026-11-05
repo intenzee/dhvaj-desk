@@ -95,7 +95,26 @@ async function follow(home) {
   }
 }
 
+// The portal's notification outbox (SwitchChannel among it) is drained by
+// its /internal/cron, which a deployment calls on a schedule. With
+// DHVAJ_CRON_SECRET set the bridge calls it too, so a local demo's
+// "review requested" or "document uploaded" reaches chat within seconds.
+function tickCron(secret, everyMs) {
+  const run = async () => {
+    try {
+      const res = await fetch(`${API}/internal/cron`, { headers: { authorization: `Bearer ${secret}` } });
+      if (!res.ok) console.error(`✗ cron: ${res.status}`);
+    } catch (e) {
+      console.error(`✗ cron: ${e.message}`);
+    }
+  };
+  console.log(`↻ draining the portal's notification outbox every ${everyMs / 1000}s`);
+  run();
+  setInterval(run, everyMs);
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  if (process.env.DHVAJ_CRON_SECRET) tickCron(process.env.DHVAJ_CRON_SECRET, Number(process.env.DHVAJ_CRON_EVERY_MS || 30_000));
   const only = process.env.DHVAJ_BRIDGE_AGENTS?.split(',');
   await Promise.all(HOMES.filter((h) => !only || only.includes(h.agent)).map(follow));
 }
