@@ -83,10 +83,18 @@ try {
 
 // 3. October sales register: not asked for yet, so dhvaj-chaser asks for it
 //    live (request_document) and its reminder carries a fresh upload link.
-const g1 = await mp.get(`/compliance-instances/${filing('GSTR-1', '2026-10')}`);
+const g1Id = filing('GSTR-1', '2026-10');
+const g1 = await mp.get(`/compliance-instances/${g1Id}`);
 const slot = g1.slots?.find((s) => s.slotCode === 'SALES_REGISTER');
-if (slot?.documents?.length) log('· the October sales register is already uploaded (re-seed for a clean chase scene)');
-else if (slot?.openRequest) {
+if (slot?.documents?.length) {
+  // An earlier run's client upload: take it out (soft delete, audited and
+  // restorable) and reopen its step, so the client can send it again.
+  const engId = g1.instance.engagementId;
+  for (const d of slot.documents) {
+    await mp.post(`/engagements/${engId}/documents/${d.id ?? d.documentId}/delete`, { reason: 'Demo reset: the client sends it again' });
+  }
+  log('✓ October sales register from an earlier run removed — dhvaj-chaser asks for it live');
+} else if (slot?.openRequest) {
   const engId = g1.instance.engagementId;
   const depId = slot.openRequest.dependencyId;
   const dep = await mp.get(`/engagements/${engId}/client-dependencies/${depId}`);
@@ -97,6 +105,13 @@ else if (slot?.openRequest) {
   });
   log('✓ October sales register request cancelled — dhvaj-chaser asks for it live');
 } else log('✓ October sales register not asked for yet — dhvaj-chaser asks for it live');
+{
+  // With no sales register in the slot, its step is open again.
+  const ws = await mp.get(`/compliance-instances/${g1Id}`);
+  const item = ws.checklist.find((c) => c.slotCode === 'SALES_REGISTER' && c.status === 'done');
+  const live = ws.slots.find((x) => x.slotCode === 'SALES_REGISTER')?.documents?.length;
+  if (item && !live) await mp.patch(`/compliance-instances/${g1Id}/items/${item.id}`, { status: 'open', version: item.version });
+}
 
 // 4. The Mehtas: close notices left open by earlier runs.
 const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);

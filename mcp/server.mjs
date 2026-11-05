@@ -986,8 +986,28 @@ server.registerTool(
       ...(args.summary ? { summary: args.summary } : {}),
       ...(args.openNotice !== undefined ? { openNotice: args.openNotice } : {}),
     });
-    const notice = r.noticeId ? noticeRow(await portal.get(`/notices/${r.noticeId}`)) : null;
-    return ok({ recorded: args.kind, client: r.return?.entityName ?? ret.entityName, notice, link: pageUrl(`/itr/${ret.id}`) });
+    // The portal makes whoever records it the notice's owner — here an agent,
+    // who cannot reply to the department. Hand it to the return's preparer.
+    let handedTo = null;
+    let raw = r.noticeId ? await portal.get(`/notices/${r.noticeId}`) : null;
+    if (raw && /\(agent\)$/.test(raw.ownerName ?? '') && ret.complianceInstanceId) {
+      const prep = (await portal.get(`/compliance-instances/${ret.complianceInstanceId}`).catch(() => null))?.task?.assigneeName;
+      if (prep && !/\(agent\)$/.test(prep)) {
+        const person = await findPerson(prep).catch(() => null);
+        if (person) {
+          raw = await portal.patch(`/notices/${raw.id}`, { version: raw.version, ownerId: person.id });
+          handedTo = person.name;
+        }
+      }
+    }
+    const notice = raw ? noticeRow(raw) : null;
+    return ok({
+      recorded: args.kind,
+      client: r.return?.entityName ?? ret.entityName,
+      notice,
+      ...(handedTo ? { ownerSetTo: `${handedTo} (the return's preparer)` } : {}),
+      link: pageUrl(`/itr/${ret.id}`),
+    });
   }),
 );
 

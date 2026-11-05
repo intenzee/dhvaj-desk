@@ -16,7 +16,8 @@
     "connect": "node switch/connect.mjs",
     "deploy": "node switch/deploy.mjs",
     "demo:reset": "node scripts/demo-reset.mjs",
-    "test:full": "node mcp/smoke-full.mjs"
+    "test:full": "node mcp/smoke-full.mjs",
+    "demo:intimation": "node scripts/demo-intimation.mjs"
   },
   "license": "Apache-2.0",
   "dependencies": {
