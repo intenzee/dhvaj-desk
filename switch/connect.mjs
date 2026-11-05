@@ -3,7 +3,8 @@
 // "dhvaj-portal", in the Dhvaj Desk rooms. Run it once after deploying the
 // template:
 //
-//   SWITCH_URL=http://localhost:8000 SWITCH_EMAIL=you@firm.in SWITCH_PASSWORD=… npm run connect
+//   npm run connect     (Switch Console's local server: found by itself)
+//   SWITCH_URL=https://switch.example SWITCH_EMAIL=you@firm.in SWITCH_PASSWORD=… npm run connect
 //
 // It registers dhvaj-portal (the API key is shown once and kept in
 // .switch.json), finds the template's rooms by name, adds dhvaj-portal to each,
@@ -11,13 +12,37 @@
 // channel. `--create-rooms` makes any missing room (for trying it out without
 // Switch Console).
 
+import { readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 export const ROOMS = ['firm-ops', 'compliance-desk', 'client-chase', 'review-queue', 'partner-signoff', 'notices-itr'];
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const URL_ = (process.env.SWITCH_URL || 'http://localhost:8000').replace(/\/$/, '');
+
+// Switch Console's own local server (macOS): its ports and its local admin
+// login live in Console's data folder. Used only when SWITCH_URL / SWITCH_EMAIL
+// / SWITCH_PASSWORD are not given; the password is never printed.
+const CONSOLE_DIR = path.join(homedir(), 'Library', 'Application Support', 'switchdash', 'local-switch-server');
+function consoleLocal() {
+  try {
+    const ports = JSON.parse(readFileSync(path.join(CONSOLE_DIR, 'ports.json'), 'utf8'));
+    const env = Object.fromEntries(
+      readFileSync(path.join(CONSOLE_DIR, 'native', 'run', 'switch-core.env'), 'utf8')
+        .split('\n')
+        .map((l) => /^([A-Z_]+)=(.*)$/.exec(l.trim()))
+        .filter(Boolean)
+        .map(([, k, v]) => [k, v.replace(/^(['"])(.*)\1$/, '$2')]),
+    );
+    return { url: `http://127.0.0.1:${ports.api}`, email: env.GATEWAY_ADMIN_EMAIL, password: env.GATEWAY_ADMIN_PASSWORD };
+  } catch {
+    return null;
+  }
+}
+const local = process.env.SWITCH_URL ? null : consoleLocal();
+if (local) console.log(`Using Switch Console's local server at ${local.url}`);
+const URL_ = (process.env.SWITCH_URL || local?.url || 'http://localhost:8000').replace(/\/$/, '');
 const createRooms = process.argv.includes('--create-rooms');
 
 let cookie = '';
@@ -34,8 +59,8 @@ async function gw(method, p, body) {
   return text ? JSON.parse(text) : null;
 }
 
-const email = process.env.SWITCH_EMAIL;
-const password = process.env.SWITCH_PASSWORD;
+const email = process.env.SWITCH_EMAIL || local?.email;
+const password = process.env.SWITCH_PASSWORD || local?.password;
 if (!email || !password) {
   console.error('Set SWITCH_EMAIL and SWITCH_PASSWORD (your Switch login).');
   process.exit(1);

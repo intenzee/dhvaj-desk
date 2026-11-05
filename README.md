@@ -35,8 +35,9 @@ npm run agents                   # builds agents/<name>/ with each agent's .mcp.
 
 1. In Switch Console, deploy `switch/dhvaj-desk.template.yaml` with
    `checkout` set to this folder.
-2. Connect the portal to the rooms:
-   `SWITCH_URL=… SWITCH_EMAIL=… SWITCH_PASSWORD=… npm run connect`.
+2. Connect the portal to the rooms: `npm run connect`. With Switch Console's
+   own local server it finds the server and its local admin login by itself;
+   for any other server set `SWITCH_URL`, `SWITCH_EMAIL` and `SWITCH_PASSWORD`.
    Start the portal API with the env it prints (`NOTIFICATION_CHANNELS=portal,switch`, `SWITCH_*`).
 3. Start the bridge: `npm run bridge`.
 
