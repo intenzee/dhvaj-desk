@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Puts the demo story back at its start, through the portal API like the seed:
 //
-//   - Sharma Traders' October GSTR-3B: Riya has prepared it and it waits in
-//     dhvaj-reviewer's To Review inbox (the #review-queue scene).
+//   - Sharma Traders' October GSTR-3B: Riya has prepared it — figures in, with
+//     ITC about 40% above September's (filed late, on record) — and it waits
+//     in dhvaj-reviewer's To Review inbox (the #review-queue scene).
 //   - Sharma's October PF return: open and nobody's yet, for the
 //     "give the PF return to Riya" scene in #compliance-desk.
 //   - The October sales register request stays open (the #client-chase scene).
@@ -12,6 +13,7 @@
 //   npm run demo:reset        (after npm run seed; safe to run again)
 
 import { Portal } from '../lib/portal.mjs';
+import { sharmaGst3b } from '../seed/gst-3b.mjs';
 
 const API = process.env.DHVAJ_API_URL || 'http://localhost:3101/api/v1';
 const mp = new Portal({ url: API, email: process.env.DHVAJ_MP_EMAIL || 'mp@dhvaj.in' });
@@ -44,13 +46,18 @@ const assigned = await mp.post('/compliance/runs/assign', {
 });
 if (assigned.failed?.length) throw new Error(assigned.failed.map((f) => f.message).join('; '));
 
-for (let i = 0; i < 6; i++) {
+let prepared = false;
+for (let i = 0; i < 8; i++) {
   const ws = await riya.get(`/compliance-instances/${g3b}`);
   const t = ws.task;
   const go = (a, body = {}) => riya.post(`/engagements/${ws.instance.engagementId}/tasks/${t.id}/${a}`, { version: t.version, ...body });
   if (t.status === 'done') await go('reopen', { reason: 'Demo reset: back to review' });
   else if (['todo', 'blocked', 'returned'].includes(t.status)) await go('start');
-  else if (t.status === 'in_progress') await go('send-for-review');
+  else if (t.status === 'in_progress' && !prepared) {
+    // Riya's figures and steps, against September's filed return.
+    await sharmaGst3b({ mp, riya, entityId: sharma.id, log: (m) => log(m) });
+    prepared = true;
+  } else if (t.status === 'in_progress') await go('send-for-review');
   else {
     log(`✓ GSTR-3B Oct 2026 is ${t.status} with ${t.reviewerName ?? 'the reviewer'}`);
     break;
@@ -79,7 +86,12 @@ for (const who of ['Anil Mehta', 'Sunita Mehta']) {
   const ent = items(await mp.get('/entities', { search: who, limit: 5 })).find((e) => e.legalName === who);
   if (!ent) continue;
   for (const n of items(await mp.get('/notices', { entityId: ent.id, limit: 50 })).filter((x) => !x.outcome)) {
-    await mp.post(`/notices/${n.id}/close`, { version: n.version, outcome: 'dropped', closedOn: today });
+    // A client's notice references are unique, closed or not: rename the
+    // run's copy first so the same 143(1) can be recorded live again.
+    const renamed = n.referenceNo.includes('(demo run')
+      ? n
+      : await mp.patch(`/notices/${n.id}`, { version: n.version, referenceNo: `${n.referenceNo} (demo run ${n.id.slice(0, 8)})` });
+    await mp.post(`/notices/${n.id}/close`, { version: renamed.version, outcome: 'dropped', closedOn: today });
     log(`✓ closed an earlier demo notice for ${who} (${n.referenceNo})`);
   }
 }

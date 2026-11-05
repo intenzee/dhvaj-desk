@@ -310,6 +310,7 @@ async function main() {
     const open = (await calendarFor(name)).filter((i) => i.workflowStatus !== 'filed');
     log(`${name} open filings:`, open.map((i) => `${i.formLabel} ${i.periodLabel} due ${i.dueDate}`).join(' · '));
   }
+  log('next: npm run demo:reset — prepares the October GSTR-3B and sends it for review');
 }
 
 main().catch((e) => {

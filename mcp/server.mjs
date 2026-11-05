@@ -625,17 +625,30 @@ server.registerTool(
   },
   tool(async (args) => {
     const { id, ws } = await resolveFiling(args);
-    const last = await portal.get(`/compliance-instances/${id}/last-period`).catch(() => null);
+    // The portal's last-period view (filed reference, checklist, review points)
+    // carries no figures: those are on the previous filing's own workspace.
+    const view = await portal.get(`/compliance-instances/${id}/last-period`).catch(() => null);
+    const prev = view?.previous ?? null;
+    const prevWs = prev ? await portal.get(`/compliance-instances/${prev.instanceId}`).catch(() => null) : null;
+    const lastFigures = prevWs?.figures ?? null;
     const openSteps = (ws.checklist ?? []).filter((c) => c.status === 'open').map((c) => ({ step: c.label, required: c.required }));
     const missingDocs = (ws.slots ?? []).filter((s) => s.required && !(s.documents ?? []).length).map((s) => ({
       slot: s.label,
       requestedFromClient: !!s.openRequest,
     }));
-    const big = figuresDiff(ws.figureSchema, ws.figures, last?.figures).filter((d) => d.changePct !== null && Math.abs(d.changePct) >= 25);
+    const big = figuresDiff(ws.figureSchema, ws.figures, lastFigures).filter((d) => d.changePct !== null && Math.abs(d.changePct) >= 25);
     return ok({
       filing: filingSummary(id, ws),
-      lastPeriod: last ? { period: last.periodLabel ?? last.instance?.periodLabel ?? null, filedOn: last.filing?.filedOn ?? last.filedOn ?? null } : null,
-      figures: figuresDiff(ws.figureSchema, ws.figures, last?.figures),
+      lastPeriod: prev
+        ? {
+            period: prev.periodLabel,
+            status: prev.workflowStatus,
+            dueDate: prev.statutoryDueDate,
+            filed: prev.filing ? { on: prev.filing.filedOn, reference: prev.filing.referenceNo, by: prev.filing.filedByName } : null,
+            reviewPoints: prev.reviewPoints ?? [],
+          }
+        : null,
+      figures: figuresDiff(ws.figureSchema, ws.figures, lastFigures),
       bigChanges: big,
       openSteps,
       missingDocuments: missingDocs,
@@ -829,7 +842,8 @@ server.registerTool(
   tool(async ({ financialYear }) => {
     const { fy, r, rows } = await seasonRows(financialYear);
     const pending = rows
-      .filter((x) => x.filedOn && x.stage !== 'verified')
+      // Stages: preparing → awaiting_verification → verified → processed (intimation received).
+      .filter((x) => x.stage === 'awaiting_verification')
       .map((x) => ({
         returnId: x.returnId,
         client: x.entityName,
