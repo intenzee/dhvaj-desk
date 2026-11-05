@@ -6,6 +6,8 @@
 //   - Sharma's October PF return: open and nobody's yet, for the
 //     "give the PF return to Riya" scene in #compliance-desk.
 //   - The October sales register request stays open (the #client-chase scene).
+//   - The Mehtas: no open notice yet, so Anil Mehta's 143(1) can be recorded
+//     live in #notices-itr; earlier demo runs' notices are closed as dropped.
 //
 //   npm run demo:reset        (after npm run seed; safe to run again)
 
@@ -70,3 +72,14 @@ try {
 const g1 = await mp.get(`/compliance-instances/${filing('GSTR-1', '2026-10')}`);
 const slot = g1.slots?.find((s) => s.slotCode === 'SALES_REGISTER');
 log(slot?.openRequest ? '✓ sales register request is open' : '· sales register request is not open (run npm run seed)');
+
+// 4. The Mehtas: close notices left open by earlier runs.
+const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+for (const who of ['Anil Mehta', 'Sunita Mehta']) {
+  const ent = items(await mp.get('/entities', { search: who, limit: 5 })).find((e) => e.legalName === who);
+  if (!ent) continue;
+  for (const n of items(await mp.get('/notices', { entityId: ent.id, limit: 50 })).filter((x) => !x.outcome)) {
+    await mp.post(`/notices/${n.id}/close`, { version: n.version, outcome: 'dropped', closedOn: today });
+    log(`✓ closed an earlier demo notice for ${who} (${n.referenceNo})`);
+  }
+}

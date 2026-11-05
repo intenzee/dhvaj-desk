@@ -5,6 +5,9 @@
 // then the five linked rooms with their kickoffs.
 //
 //   npm run agents && npm run deploy && npm run connect
+//   npm run deploy -- --replace   (remove this template's agents, rooms and
+//                                  group first: a clean slate, e.g. before
+//                                  recording; Mattermost channels are archived)
 //
 // Same sign-in as connect (Switch Console's local server is found by itself).
 
@@ -16,7 +19,11 @@ import { signIn } from './gateway.mjs';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const TEMPLATE = path.join(ROOT, 'switch', 'dhvaj-desk.template.yaml');
 
-for (const a of ['dhvaj-desk', 'dhvaj-chaser', 'dhvaj-reviewer']) {
+const AGENTS = ['dhvaj-desk', 'dhvaj-chaser', 'dhvaj-reviewer', 'dhvaj-notices'];
+const ROOMS = ['firm-ops', 'compliance-desk', 'client-chase', 'review-queue', 'partner-signoff', 'notices-itr'];
+const GROUP = 'Dhvaj Desk';
+
+for (const a of AGENTS) {
   if (!existsSync(path.join(ROOT, 'agents', a, '.mcp.json'))) {
     console.error(`agents/${a}/.mcp.json is missing: run \`npm run agents\` first.`);
     process.exit(1);
@@ -24,6 +31,28 @@ for (const a of ['dhvaj-desk', 'dhvaj-chaser', 'dhvaj-reviewer']) {
 }
 
 const { gw } = await signIn();
+
+if (process.argv.includes('--replace')) {
+  const rooms = (await gw('GET', '/rooms')).filter((r) => ROOMS.includes(r.name));
+  for (const r of rooms) {
+    await gw('DELETE', `/rooms/${r.id}?retire_channel=true`);
+    console.log(`− #${r.name} removed`);
+  }
+  for (const a of AGENTS) {
+    try {
+      await gw('DELETE', `/agents/by-name/${a}`);
+      console.log(`− agent ${a} removed`);
+    } catch (e) {
+      if (e.status !== 404) throw e;
+    }
+  }
+  const groups = await gw('GET', '/room-groups').catch(() => []);
+  for (const g of (Array.isArray(groups) ? groups : (groups?.items ?? [])).filter((x) => x.name === GROUP)) {
+    await gw('DELETE', `/room-groups/${g.id}`);
+    console.log(`− group ${GROUP} removed`);
+  }
+}
+
 try {
   const out = await gw('POST', '/rooms/from-template-document', {
     template: readFileSync(TEMPLATE, 'utf8'),
