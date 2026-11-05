@@ -78,7 +78,10 @@ console.log(`✓ dhvaj-portal registered (${agent.id})`);
 const existing = await gw('GET', '/rooms');
 const rooms = {};
 for (const name of ROOMS) {
-  let room = existing.find((r) => r.name === name);
+  // Exact name first; Console may prefix a template's rooms (e.g. "dhvaj-desk-firm-ops").
+  let room =
+    existing.find((r) => r.name === name) ??
+    existing.find((r) => r.name?.endsWith(`-${name}`) || r.name?.endsWith(`/${name}`));
   if (!room && createRooms) {
     room = await gw('POST', '/rooms', { name, description: `Dhvaj Desk — #${name}`, agent_ids: [agent.id] });
     console.log(`✓ #${name} created`);
@@ -90,6 +93,11 @@ for (const name of ROOMS) {
     continue;
   }
   rooms[name] = room.id;
+}
+
+if (Object.keys(rooms).length < ROOMS.length) {
+  const names = existing.map((r) => r.name).filter(Boolean);
+  console.log(`\nRooms on this Switch server: ${names.length ? names.map((n) => `#${n}`).join(', ') : 'none yet'}`);
 }
 
 const out = { url: URL_, agentId: agent.id, apiKey: agent.api_key, rooms };
