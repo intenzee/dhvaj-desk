@@ -174,7 +174,10 @@ async function main() {
         engagementManagerEmployeeId: manager,
         teamMemberEmployeeIds: team,
         streams: ['gst', 'payroll'],
-        streamLeads: { gst: manager, payroll: manager },
+        // dhvaj-desk leads both streams, so (with the firm's "managers and
+        // stream leads" assign policy) it can hand out these filings — and
+        // nothing more: signing and lodging stay with people.
+        streamLeads: { gst: agents[0], payroll: agents[0] },
         // Filed before the portal: April–August. September is overdue and
         // October is this month's work.
         priorFiled: { gst: months('2026-04', '2026-08'), payroll: months('2026-04', '2026-08') },
@@ -182,14 +185,18 @@ async function main() {
       (e) => e.kind === 'compliance',
     ),
   );
-  await step('Sharma: October bank statement requested from the client', async () => {
-    const deps = items(await mp.get(`/engagements/${sharmaEng.id}/client-dependencies`));
-    if (deps.some((d) => /bank statement/i.test(d.requestedInfo ?? ''))) return;
-    await mp.post(`/engagements/${sharmaEng.id}/client-dependencies`, {
-      requestedInfo: 'Bank statement for October 2026 (HDFC current account)',
-      outstandingItems: 'October 2026 statement, all pages, as a PDF',
-      responsibleEmployeeId: riya,
-      requestDate: TODAY,
+  await step('Sharma: October GSTR-1 waiting on the client’s sales register', async () => {
+    // Requested through the filing's own slot: the portal opens the client
+    // dependency and a secure upload link, and the upload ticks the step.
+    const cal = await mp.get('/compliance/calendar', { engagementId: sharmaEng.id, from: '2026-11-01', to: '2026-11-30' });
+    const gstr1 = items(cal).find((i) => i.formLabel === 'GSTR-1' && i.periodKey === '2026-10');
+    if (!gstr1) throw new Error('no October GSTR-1 on the calendar');
+    const ws = await mp.get(`/compliance-instances/${gstr1.id}`);
+    const slot = ws.slots.find((s) => s.slotCode === 'SALES_REGISTER');
+    if (slot.openRequest || slot.documents.length) return;
+    await mp.post(`/compliance-instances/${gstr1.id}/slots/SALES_REGISTER/request`, {
+      requestedInfo: 'Sales register for October 2026 (all invoices, as Excel)',
+      ttlHours: 72,
     });
   });
 

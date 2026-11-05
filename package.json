@@ -1,0 +1,21 @@
+{
+  "name": "dhvaj-desk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A CA firm run from team chat: Dhvaj Portal agents and people in Switch rooms",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "mcp": "node mcp/server.mjs",
+    "bridge": "node bridge/bridge.mjs",
+    "seed": "node seed/demo-story.mjs",
+    "test:mcp": "node mcp/smoke.mjs"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  }
+}
