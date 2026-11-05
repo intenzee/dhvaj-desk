@@ -712,4 +712,357 @@ server.registerTool(
   }),
 );
 
+// ── Full tier: KYC, notices and the ITR desk, certificates, invoices ───────
+
+/** The financial year a date falls in: '2026-11-06' → '2026-27'. */
+function fyOf(iso) {
+  const y = Number(iso.slice(0, 4));
+  const start = Number(iso.slice(5, 7)) >= 4 ? y : y - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
+}
+/** The ITR season people mean now: last financial year's returns. */
+const itrSeasonFy = () => {
+  const fy = fyOf(istToday());
+  const start = Number(fy.slice(0, 4)) - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
+};
+
+async function engagementsOf(entityId, kind) {
+  const all = items(await portal.get('/engagements', { entityId, limit: 50 }));
+  return kind ? all.filter((e) => e.kind === kind) : all;
+}
+
+// KYC ─────────────────────────────────────────────────────────────────────
+server.registerTool(
+  'kyc_status',
+  {
+    title: 'Client KYC status',
+    description:
+      'KYC for one client (status, risk rating, what is missing, next review), or, with no client, the ' +
+      'firm’s KYC list with counts (pending, overdue reviews).',
+    inputSchema: { client: z.string().optional() },
+  },
+  tool(async ({ client }) => {
+    if (client) {
+      const ent = await findClient(client);
+      const kyc = await portal.get(`/entities/${ent.id}/kyc`);
+      return ok({ client: ent.legalName, kyc, link: pageUrl(`/client-kyc?entity=${ent.id}`) });
+    }
+    const r = await portal.get('/client-kyc', { limit: 100 });
+    return ok({
+      counts: r.counts ?? null,
+      total: r.total ?? items(r).length,
+      notComplete: items(r)
+        .filter((k) => k.status !== 'complete')
+        .map((k) => ({ client: k.entityName, status: k.status, risk: k.riskRating, nextReviewOn: k.nextReviewOn })),
+      link: pageUrl('/client-kyc'),
+    });
+  }),
+);
+
+// Notices and the ITR desk ─────────────────────────────────────────────────
+function noticeRow(n) {
+  return {
+    noticeId: n.id,
+    client: n.entityName,
+    notice: n.noticeType?.title ?? n.noticeType?.code,
+    section: n.noticeType?.section ?? null,
+    referenceNo: n.referenceNo,
+    issuedOn: n.issuedOn,
+    amountDemanded: n.amountDemanded,
+    owner: n.ownerName,
+    nextDate: n.clock ? { what: n.clock.label, due: n.clock.due, daysLeft: n.clock.daysLeft, overdue: n.clock.overdue } : null,
+    outcome: n.outcome,
+    link: pageUrl(`/notices/${n.id}`),
+  };
+}
+
+server.registerTool(
+  'notice_deadlines',
+  {
+    title: 'Open notices and their next dates',
+    description:
+      'Open tax notices (income tax, GST, TDS) with the date that matters now — reply due, hearing, ' +
+      'appeal window — soonest first. Optionally for one client, or only those due within N days.',
+    inputSchema: { client: z.string().optional(), withinDays: z.number().int().min(0).max(365).optional() },
+  },
+  tool(async ({ client, withinDays }) => {
+    const ent = client ? await findClient(client) : null;
+    const rows = items(await portal.get('/notices', { ...(ent ? { entityId: ent.id } : {}), limit: 100 }))
+      .filter((n) => !n.outcome)
+      .map(noticeRow)
+      .filter((n) => withinDays === undefined || (n.nextDate && n.nextDate.daysLeft <= withinDays))
+      .sort((a, b) => (a.nextDate?.due ?? '9999').localeCompare(b.nextDate?.due ?? '9999'));
+    return ok({ count: rows.length, notices: rows, link: pageUrl('/notices') });
+  }),
+);
+
+server.registerTool(
+  'notice_from_upload',
+  {
+    title: 'Read a notice from its uploaded PDF',
+    description:
+      'Given an uploaded notice document, return what the portal reads from it (OCR): GSTIN/PAN, ' +
+      'reference or DIN, issue and reply dates, section, amount, the matching client and engagement. ' +
+      'Nothing is saved; a person confirms and records the notice.',
+    inputSchema: { documentId: z.string().uuid() },
+  },
+  tool(async ({ documentId }) => ok({ suggestions: await portal.post('/notices/intake', { documentId }) })),
+);
+
+async function seasonRows(financialYear) {
+  const fy = financialYear ?? itrSeasonFy();
+  const r = await portal.get('/itr/season', { financialYear: fy, scope: 'all' });
+  return { fy, r, rows: items(r) };
+}
+
+server.registerTool(
+  'everify_pending',
+  {
+    title: 'ITRs filed but not yet e-verified',
+    description:
+      'Returns on the ITR desk that are filed but still to be e-verified (a return not verified within ' +
+      '30 days of filing is treated as not filed), with the e-verify deadline. Defaults to last ' +
+      'financial year’s season.',
+    inputSchema: { financialYear: z.string().regex(/^\d{4}-\d{2}$/).optional() },
+  },
+  tool(async ({ financialYear }) => {
+    const { fy, r, rows } = await seasonRows(financialYear);
+    const pending = rows
+      .filter((x) => x.filedOn && x.stage !== 'verified')
+      .map((x) => ({
+        returnId: x.returnId,
+        client: x.entityName,
+        pan: x.pan,
+        filedOn: x.filedOn,
+        ackNo: x.ackNo,
+        eVerifyDueOn: x.eVerifyDueOn,
+        overdue: x.eVerifyOverdue,
+        preparer: x.preparerName,
+        link: pageUrl(`/itr/${x.returnId}`),
+      }))
+      .sort((a, b) => String(a.eVerifyDueOn).localeCompare(String(b.eVerifyDueOn)));
+    return ok({ financialYear: fy, season: r.yearLabel, pending, link: pageUrl('/itr') });
+  }),
+);
+
+/** A client's ITR on the season grid (by returnId, or client name). */
+async function findReturn({ returnId, client, financialYear }) {
+  if (returnId) return portal.get(`/itr/returns/${returnId}`);
+  if (!client) throw new Error('Give a returnId, or the client’s name.');
+  const { rows } = await seasonRows(financialYear);
+  const n = norm(client);
+  const hits = rows.filter((x) => norm(x.entityName) === n || norm(x.entityName).includes(n));
+  if (!hits.length) throw new Error(`No ITR for "${client}" on the ITR desk.`);
+  if (hits.length > 1) throw new Error(`"${client}" matches ${hits.map((x) => x.entityName).join(', ')}. Say which.`);
+  if (!hits[0].returnId) throw new Error(`${hits[0].entityName}'s return is not started on the ITR desk yet.`);
+  return portal.get(`/itr/returns/${hits[0].returnId}`);
+}
+
+server.registerTool(
+  'everify_remind',
+  {
+    title: 'Remind a client to e-verify (needs approval)',
+    description:
+      'Send the client the portal’s e-verify reminder (the firm’s channel, or e-mail/WhatsApp). ' +
+      'REQUIRES approval: {by, messageLink} from a person in the room.',
+    inputSchema: {
+      returnId: z.string().uuid().optional(),
+      client: z.string().optional(),
+      channel: z.enum(['email', 'whatsapp']).optional(),
+      approval: approvalSchema,
+    },
+  },
+  tool(async (args) => {
+    const approved = await checkApproval(args.approval, 'sending an e-verify reminder');
+    const ret = await findReturn(args);
+    const sent = await portal.post(`/itr/returns/${ret.id}/remind-verify`, args.channel ? { channel: args.channel } : {});
+    return ok({ sent, approvedBy: approved.approvedBy, approvalMessage: approved.messageLink, link: pageUrl(`/itr/${ret.id}`) });
+  }),
+);
+
+server.registerTool(
+  'record_intimation',
+  {
+    title: 'Record a 143(1) intimation or 245 set-off',
+    description:
+      'Record an intimation received for a client’s ITR on the ITR desk: 143(1) (processed: accepted, ' +
+      'refund or demand) or a 245 proposed set-off. A demand or a set-off opens a notice on the notice ' +
+      'register with its reply deadline. Use the dates and reference exactly as on the intimation.',
+    inputSchema: {
+      returnId: z.string().uuid().optional(),
+      client: z.string().optional(),
+      kind: z.enum(['143_1', '245']),
+      referenceNo: z.string().min(3).describe('The DIN / communication reference number'),
+      issuedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      receivedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      result: z.enum(['no_change', 'refund', 'demand']).optional(),
+      amount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional().describe('Refund or demand in rupees'),
+      summary: z.string().max(2000).optional(),
+      openNotice: z.boolean().optional().describe('Open a notice for it (default: the portal decides)'),
+    },
+  },
+  tool(async (args) => {
+    const ret = await findReturn(args);
+    const r = await portal.post(`/itr/returns/${ret.id}/intimation`, {
+      version: ret.version,
+      kind: args.kind,
+      referenceNo: args.referenceNo,
+      issuedOn: args.issuedOn,
+      receivedOn: args.receivedOn,
+      ...(args.result ? { result: args.result } : {}),
+      ...(args.amount ? { amount: args.amount } : {}),
+      ...(args.summary ? { summary: args.summary } : {}),
+      ...(args.openNotice !== undefined ? { openNotice: args.openNotice } : {}),
+    });
+    const notice = r.noticeId ? noticeRow(await portal.get(`/notices/${r.noticeId}`)) : null;
+    return ok({ recorded: args.kind, client: r.return?.entityName ?? ret.entityName, notice, link: pageUrl(`/itr/${ret.id}`) });
+  }),
+);
+
+// Certificates ─────────────────────────────────────────────────────────────
+server.registerTool(
+  'certificate_prepare',
+  {
+    title: 'Prepare a certificate sign-off pack',
+    description:
+      'Find a client’s certificates (Form 146/15CB, net worth and others) and their status and UDIN. ' +
+      'With partner and summary, give the partner an urgent quick task with the pack and the portal link. ' +
+      'Only a partner signs and generates the UDIN, in the portal; you never sign.',
+    inputSchema: {
+      client: z.string(),
+      certificate: z.string().optional().describe('Which one, e.g. "15CB" or "Form 146"; default: the open ones'),
+      partner: z.string().optional(),
+      summary: z.string().max(3000).optional().describe('Your pack: what it certifies, key figures, checks done, open points'),
+    },
+  },
+  tool(async ({ client, certificate, partner, summary }) => {
+    const ent = await findClient(client);
+    const certs = [];
+    for (const e of await engagementsOf(ent.id)) {
+      for (const c of items(await portal.get(`/engagements/${e.id}/certificates`).catch(() => []))) certs.push({ ...c, engagementId: e.id });
+    }
+    const want = certificate ? norm(certificate) : null;
+    const pick = certs.filter((c) =>
+      want ? [c.templateCode, c.templateName, c.formLabel].some((s) => norm(s).includes(want)) : !['issued', 'revoked'].includes(c.status),
+    );
+    const rows = pick.map((c) => ({
+      certificateId: c.id,
+      form: c.formLabel,
+      name: c.templateName,
+      purpose: c.purpose,
+      addressee: c.addressee,
+      status: c.status,
+      udin: c.udin,
+      figures: c.figures,
+      link: pageUrl(`/engagements/${c.engagementId}?tab=certificates`),
+    }));
+    if (!partner) return ok({ client: ent.legalName, certificates: rows });
+    if (rows.length !== 1) throw new Error(`Say which certificate: ${rows.map((r) => r.form).join(', ') || 'none open'}.`);
+    if (!summary) throw new Error('Write the pack (summary) for the partner.');
+    const p = await findPerson(partner);
+    if (isAgent(p)) throw new Error(`${p.name} is an agent; a partner signs certificates.`);
+    const c = rows[0];
+    const t = await portal.post('/quick-tasks', {
+      title: `Sign: ${c.form} · ${ent.legalName}`,
+      details: `${summary}\n\nSign and generate the UDIN in the portal: ${c.link}`,
+      assignedToEmployeeId: p.id,
+      engagementId: pick[0].engagementId,
+      urgent: true,
+    });
+    return ok({ askedPartner: p.name, quickTaskId: t.id, certificate: c });
+  }),
+);
+
+// Invoices ─────────────────────────────────────────────────────────────────
+async function invoiceService(client, service) {
+  const ent = await findClient(client);
+  const out = [];
+  for (const e of await engagementsOf(ent.id)) {
+    for (const s of items(await portal.get(`/engagements/${e.id}/invoice-services`).catch(() => []))) {
+      out.push({ ...s, engagementId: e.id, engagementCode: e.engagementCode });
+    }
+  }
+  const n = norm(service);
+  const hits = out.filter((s) => norm(s.name).includes(n) || norm(s.stream) === n);
+  if (!hits.length) throw new Error(`No "${service}" service to invoice for ${ent.legalName}. Services: ${out.map((s) => s.name).join(', ') || 'none'}.`);
+  if (hits.length > 1) throw new Error(`"${service}" matches ${hits.map((s) => `${s.name} (${s.engagementCode})`).join(', ')}. Say which.`);
+  return { ent, svc: hits[0] };
+}
+
+function invoiceRow(inv, engagementId) {
+  return {
+    invoiceId: inv.id,
+    engagementId,
+    number: inv.invoiceNumber,
+    status: inv.status,
+    issueDate: inv.issueDate,
+    dueDate: inv.dueDate,
+    taxable: inv.subtotal,
+    gst: { total: inv.taxAmount, cgst: inv.cgst, sgst: inv.sgst, igst: inv.igst },
+    total: inv.total,
+    notes: inv.notes,
+    link: pageUrl(`/engagements/${engagementId}?tab=invoices`),
+  };
+}
+
+server.registerTool(
+  'invoice_draft',
+  {
+    title: 'Draft an invoice',
+    description:
+      'Draft (not issue) a quick invoice for a client’s service, e.g. after a filing is lodged. A partner ' +
+      'or the billing team reviews and issues it in the portal; sending it needs a person’s approval.',
+    inputSchema: {
+      client: z.string(),
+      service: z.string().describe('The service or stream, e.g. "GST" or "Payroll"'),
+      amount: z.string().regex(/^\d+(\.\d{1,2})?$/).describe('Taxable value in rupees'),
+      gstRate: z.union([z.literal(0), z.literal(5), z.literal(12), z.literal(18), z.literal(28)]).optional(),
+      description: z.string().max(500).optional(),
+    },
+  },
+  tool(async ({ client, service, amount, gstRate, description }) => {
+    const { ent, svc } = await invoiceService(client, service);
+    const r = await portal.post(`/engagements/${svc.engagementId}/invoices/quick`, {
+      engagementServiceId: svc.engagementServiceId,
+      amount,
+      gstRate: gstRate ?? 18,
+      ...(description ? { description } : {}),
+      issue: false,
+    });
+    return ok({
+      client: ent.legalName,
+      service: svc.name,
+      invoice: invoiceRow(r.invoice, svc.engagementId),
+      gstRate: gstRate ?? 18,
+      note: `A draft: GST at ${gstRate ?? 18}% (CGST/SGST or IGST) is worked out when a person issues it in the portal.`,
+    });
+  }),
+);
+
+server.registerTool(
+  'invoice_send',
+  {
+    title: 'Send an issued invoice to the client (needs approval)',
+    description:
+      'Send an issued invoice by e-mail or WhatsApp through the portal (logged on the invoice). Drafts ' +
+      'must be issued in the portal first. REQUIRES approval: {by, messageLink} from a person.',
+    inputSchema: {
+      engagementId: z.string().uuid(),
+      invoiceId: z.string().uuid(),
+      channel: z.enum(['email', 'whatsapp', 'mail_app']),
+      approval: approvalSchema,
+    },
+  },
+  tool(async ({ engagementId, invoiceId, channel, approval }) => {
+    const approved = await checkApproval(approval, 'sending an invoice');
+    const r = await portal.post(`/engagements/${engagementId}/invoices/${invoiceId}/send`, { channel });
+    return ok({
+      sent: { channel: r.channel, to: r.to, queued: r.queued, waUrl: r.waUrl, mailtoUrl: r.mailtoUrl },
+      approvedBy: approved.approvedBy,
+      approvalMessage: approved.messageLink,
+    });
+  }),
+);
+
 await server.connect(new StdioServerTransport());
