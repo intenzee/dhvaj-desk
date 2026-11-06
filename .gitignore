@@ -4,3 +4,5 @@ node_modules/
 agents/
 approvals.jsonl
 .switch.json
+.env.*
+!.env.example

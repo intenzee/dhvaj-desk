@@ -97,7 +97,22 @@ export const MENTIONS = {
 
 const out = { url: URL_, agentId: agent.id, apiKey: agent.api_key, rooms, mentions: MENTIONS };
 await writeFile(path.join(ROOT, '.switch.json'), `${JSON.stringify(out, null, 2)}\n`, { mode: 0o600 });
-console.log(`\nSaved .switch.json. Start the portal API with:\n`);
+// The same, for the portal API in docker compose (env_file). Inside a
+// container the host's loopback is host.docker.internal. Rooms are found by
+// name, so a redeploy of the template needs no change here.
+const dockerUrl = URL_.replace(/\/\/(127\.0\.0\.1|localhost)([:/])/, '//host.docker.internal$2');
+const envSwitch = [
+  '# Written by npm run connect. Holds the dhvaj-portal agent key: keep it private.',
+  'NOTIFICATION_CHANNELS=portal,switch',
+  `SWITCH_URL=${dockerUrl}`,
+  `SWITCH_AGENT_ID=${agent.id}`,
+  `SWITCH_API_KEY=${agent.api_key}`,
+  `SWITCH_MENTIONS='${JSON.stringify(MENTIONS)}'`,
+  '',
+].join('\n');
+await writeFile(path.join(ROOT, '.env.switch'), envSwitch, { mode: 0o600 });
+console.log(`\nSaved .switch.json and .env.switch (docker compose up -d api picks it up).`);
+console.log(`\nTo run the portal API outside docker, start it with:\n`);
 console.log(`NOTIFICATION_CHANNELS=portal,switch`);
 console.log(`SWITCH_URL=${URL_}`);
 console.log(`SWITCH_AGENT_ID=${agent.id}`);

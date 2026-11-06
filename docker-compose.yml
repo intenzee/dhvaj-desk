@@ -1,0 +1,110 @@
+# Dhvaj Desk demo: the Dhvaj Portal (branch switch-integration) with fake
+# seed data, in one command.
+#
+#   cp .env.example .env
+#   git clone -b switch-integration <portal repo> ../dhvaj-portal   # or set DHVAJ_PORTAL_DIR
+#   docker compose up -d --build
+#
+# What comes up:
+#   postgres  the portal's database; row-level security forced on every table
+#   api       the portal API on :3101 — creates its two DB roles, migrates and
+#             loads the demo firm (people, offices) on first start
+#   web       the portal on :3100 — sign in as any demo person (dev sign-in)
+#   seed      one-shot: the Dhvaj Desk story (Sharma Traders, Acme Exports,
+#             the Mehtas) and the four agent users, through the portal API
+#
+# The agents, dhvaj-mcp and the bridge run on your machine next to Switch
+# Console (see the README): `npm run connect` writes .env.switch, then
+# `docker compose up -d api` lets the portal post into the rooms.
+#
+# Everything here is demo-only: dev sign-in, made-up clients, local secrets.
+
+name: dhvaj-desk
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: dhvaj_demo
+    ports:
+      - '${DB_PORT:-5434}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d dhvaj_demo']
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: ${DHVAJ_PORTAL_DIR:-../dhvaj-portal}
+      dockerfile: apps/api/Dockerfile
+    # Provision roles → migrate → seed the demo firm → start as hsdg_app.
+    command: ['node', 'scripts/deploy/start.mjs']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - path: .env.switch # written by `npm run connect`; absent until then
+        required: false
+    environment:
+      NODE_ENV: development # dev sign-in for the demo personas and agents
+      PORT: 3101
+      DATABASE_ADMIN_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/dhvaj_demo
+      DEPLOY_DB_SSL: 'false'
+      SEED_MODE: demo
+      DB_MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD:?set it in .env}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?set it in .env}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?set it in .env}
+      AUTH_DEV_FALLBACK: 'true'
+      CRON_SECRET: ${CRON_SECRET:?set it in .env}
+      CORS_ORIGINS: http://localhost:${WEB_PORT:-3100}
+      CLIENT_UPLOAD_ENABLED: 'true'
+      DATABASE_STATEMENT_TIMEOUT_MS: '60000'
+      FEATURE_FLAGS: all # ITR desk, KYC, certificates, notices, filing runs
+    ports:
+      - '${API_PORT:-3101}:3101'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway' # reach Switch on the host (Linux)
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3101/api/v1/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  web:
+    build:
+      context: ${DHVAJ_PORTAL_DIR:-../dhvaj-portal}
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-3101}/api/v1
+        NEXT_PUBLIC_CLIENT_UPLOAD_ENABLED: 'true'
+    environment:
+      PORT: 3000
+    ports:
+      - '${WEB_PORT:-3100}:3000'
+    depends_on:
+      api:
+        condition: service_healthy
+
+  seed:
+    image: node:22-bookworm-slim
+    working_dir: /desk
+    command: ['sh', '-c', 'npm ci --no-audit --no-fund --loglevel=error && node seed/demo-story.mjs && node scripts/demo-reset.mjs']
+    volumes:
+      - ./:/desk
+      - seed-node-modules:/desk/node_modules
+    environment:
+      DHVAJ_API_URL: http://api:3101/api/v1
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: 'no'
+
+volumes:
+  pgdata:
+  seed-node-modules:
