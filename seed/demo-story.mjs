@@ -9,6 +9,7 @@
 // Safe to re-run: anything that already exists is found and reused.
 
 import { Portal, PortalError, istToday } from '../lib/portal.mjs';
+import { acme15cbInReview } from './acme-15cb.mjs';
 
 const mp = new Portal({ email: process.env.DHVAJ_MP_EMAIL || 'mp@dhvaj.in' });
 const TODAY = istToday();
@@ -143,6 +144,24 @@ async function main() {
     if (!e) throw new Error(`no employee for ${email}`);
     return e.id;
   };
+  // A partner signs a certificate only with a certificate of practice valid
+  // that day and an ICAI membership number of up to 6 digits (the UDIN carries
+  // it) — Admin → People. The demo partners get both.
+  for (const e of emp.values()) {
+    if (!e.isPartner) continue;
+    const digits = /^[0-9]{1,6}$/.test(e.membershipNo ?? '')
+      ? null
+      : (e.membershipNo ?? '').replace(/\D/g, '').slice(-6) || null;
+    const copOk = e.copValidUntil && e.copValidUntil >= TODAY;
+    if (copOk && !digits) continue;
+    await step(`signing details for ${e.fullName}`, () =>
+      mp.patch(`/employees/${e.id}`, {
+        ...(digits ? { membershipNo: digits } : {}),
+        ...(copOk ? {} : { copNo: e.copNo ?? `COP-DEMO-${digits ?? e.membershipNo}`, copValidUntil: '2027-03-31' }),
+        version: e.version,
+      }),
+    );
+  }
   const partner = id(PARTNER_EMAIL);
   const manager = id(MANAGER_EMAIL);
   const agents = ['desk', 'chaser', 'reviewer', 'notices'].map((k) => id(PEOPLE.find((p) => p.key === k).email));
@@ -220,40 +239,9 @@ async function main() {
       (e) => e.kind === 'assignment',
     ),
   );
-  await step('Acme: Form 146 (15CB) drafted and sent for review', async () => {
-    const certs = items(await mp.get(`/engagements/${acmeEng.id}/certificates`));
-    const cert =
-      certs.find((c) => c.templateCode === 'CERT_15CB') ??
-      (await mp.post(`/engagements/${acmeEng.id}/certificates`, {
-      templateCode: 'CERT_15CB',
-      purpose: 'Remittance of freight charges to Kline Logistics GmbH, Germany',
-      addressee: 'The Manager, HDFC Bank, Fort Branch, Mumbai',
-      asOnDate: TODAY,
-      figures: {
-        remitter_name: 'Acme Exports Pvt Ltd',
-        remitter_pan: 'AAECA7310M',
-        remittee_name: 'Kline Logistics GmbH',
-        remittee_country: 'Germany',
-        nature_of_remittance: 'Ocean freight for export shipments (invoice KL-2026-1182)',
-        purpose_code: 'S0221',
-        currency: 'EUR',
-        amount_fcy: 12000,
-        amount_inr: '1086000',
-        bank_name: 'HDFC Bank',
-        bsr_code: '0510308',
-        remittance_date: '2026-11-10',
-        taxable_in_india: 'no',
-        provision: 'Article 8 of the India–Germany DTAA: shipping profits taxable only in Germany',
-        trc_obtained: 'yes',
-        tds_rate: 0,
-        tds_amount: '0',
-        remarks: 'TRC and Form 10F on file; no PE in India.',
-      },
-    }));
-    if (cert.status === 'draft') {
-      await mp.post(`/engagements/${acmeEng.id}/certificates/${cert.id}/submit`, { version: cert.version });
-    }
-  });
+  await step('Acme: Form 146 (15CB) drafted and sent for review', () =>
+    acme15cbInReview({ mp, engagementId: acmeEng.id, today: TODAY }),
+  );
 
   // 3. The Mehta family — ITRs for AY 2026-27 (FY 2025-26).
   for (const m of [

@@ -176,8 +176,11 @@ You need Docker, Node 20+, and [Switch Console](https://github.com/sandbox-quant
 5. **#notices-itr** — `@dhvaj-notices 143(1) for Anil Mehta, ref
    CPC/2627/A1/481920337, demand 14350, issued today` (or `npm run demo:intimation`).
 6. **#partner-signoff** — `@dhvaj-reviewer prepare Acme's 15CB for the
-   partner`. Sign it in the portal as `partner.a@dhvaj.in` with a UDIN: the
-   portal posts "Signed: …" and the desk asks for the fee and drafts the invoice.
+   partner`. In the portal, as `partner.a@dhvaj.in`, approve the review and
+   sign it with a UDIN on Partner A's membership number (any 18 characters
+   starting `26100003`, e.g. `26100003ACMEDEMO01`): the portal posts
+   "Signed: …" and the desk asks for the fee and drafts the invoice.
+   `npm run demo:reset` drafts a fresh 15CB for the next run.
 
 ## Layout
 

@@ -15,6 +15,7 @@
 
 import { Portal } from '../lib/portal.mjs';
 import { sharmaGst3b } from '../seed/gst-3b.mjs';
+import { acme15cbInReview } from '../seed/acme-15cb.mjs';
 
 const API = process.env.DHVAJ_API_URL || 'http://localhost:3101/api/v1';
 const mp = new Portal({ url: API, email: process.env.DHVAJ_MP_EMAIL || 'mp@dhvaj.in' });
@@ -127,4 +128,16 @@ for (const who of ['Anil Mehta', 'Sunita Mehta']) {
     await mp.post(`/notices/${n.id}/close`, { version: renamed.version, outcome: 'dropped', closedOn: today });
     log(`✓ closed an earlier demo notice for ${who} (${n.referenceNo})`);
   }
+}
+
+// 5. Acme's 15CB: one waiting for the partner. A rehearsal's signed copy stays
+//    in the register (its UDIN is for ever), so a fresh one is drafted.
+try {
+  const acme = items(await mp.get('/entities', { search: 'Acme Exports', limit: 5 })).find((e) => e.legalName === 'Acme Exports Pvt Ltd');
+  const eng = acme && items(await mp.get('/engagements', { entityId: acme.id, limit: 50 })).find((e) => e.kind === 'assignment');
+  if (!eng) throw new Error('no Acme certification engagement: run npm run seed first');
+  const { cert, created } = await acme15cbInReview({ mp, engagementId: eng.id, today });
+  log(`${created ? '✓ drafted a fresh' : '·'} Acme 15CB ${created ? 'and sent it for review' : `is ${cert.status}`}, waiting for Partner A`);
+} catch (e) {
+  log(`· Acme 15CB: ${e.message}`);
 }
