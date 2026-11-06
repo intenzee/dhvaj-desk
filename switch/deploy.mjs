@@ -2,7 +2,7 @@
 // Deploys the Dhvaj Desk template to a Switch server, the way Switch Console's
 // Deploy does: the server creates the three agents on your machine (Console's
 // own, for `location: local`), working in agents/<name>/ of this checkout,
-// then the five linked rooms with their kickoffs.
+// then the six linked rooms with their kickoffs.
 //
 //   npm run agents && npm run deploy && npm run connect
 //   npm run deploy -- --replace   (remove this template's agents, rooms and
@@ -62,8 +62,15 @@ try {
   for (const a of out.created_agents ?? []) {
     console.log(`✓ agent ${a.name} on ${a.machine?.name ?? a.machine?.id ?? a.machine}${a.listening ? '' : ' (not listening yet: its kickoff may wait)'}`);
   }
-  const rooms = (out.room?.rooms ?? []).map((r) => `#${r.room_name}`);
-  console.log(`✓ ${out.room?.group_name ?? 'rooms'}: ${rooms.join(', ') || JSON.stringify(out.room).slice(0, 400)}`);
+  const made = (out.room?.rooms ?? []).map((r) => r.room_name);
+  console.log(`✓ ${out.room?.group_name ?? 'rooms'}: ${made.map((n) => `#${n}`).join(', ') || JSON.stringify(out.room).slice(0, 400)}`);
+  // Switch can come back without a room (e.g. Mattermost still holds a
+  // retired channel of that name): say so rather than leave the story short.
+  const missing = ROOMS.filter((n) => !made.some((m) => m === n || m.endsWith(`-${n}`)));
+  if (missing.length) {
+    console.error(`✗ not created: ${missing.map((n) => `#${n}`).join(', ')} — run npm run deploy -- --replace again`);
+    process.exit(2);
+  }
   console.log('\nNext: npm run connect');
 } catch (e) {
   console.error(`✗ deploy refused\n${e.message}`);

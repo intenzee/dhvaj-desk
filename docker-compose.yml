@@ -2,8 +2,12 @@
 # seed data, in one command.
 #
 #   cp .env.example .env
-#   git clone -b switch-integration <portal repo> ../dhvaj-portal   # or set DHVAJ_PORTAL_DIR
-#   docker compose up -d --build
+#   docker compose up -d
+#
+# The portal comes as prebuilt images (ghcr.io/intenzee/dhvaj-desk-portal-*,
+# amd64 and arm64). With the portal's source next to this folder you can
+# build them yourself instead:
+#   docker compose -f docker-compose.yml -f compose.build.yml up -d --build
 #
 # What comes up:
 #   postgres  the portal's database; row-level security forced on every table
@@ -11,7 +15,8 @@
 #             loads the demo firm (people, offices) on first start
 #   web       the portal on :3100 — sign in as any demo person (dev sign-in)
 #   seed      one-shot: the Dhvaj Desk story (Sharma Traders, Acme Exports,
-#             the Mehtas) and the four agent users, through the portal API
+#             the Mehtas) and the four agent users, through the portal API,
+#             then `demo:reset` to put the story at its start
 #
 # The agents, dhvaj-mcp and the bridge run on your machine next to Switch
 # Console (see the README): `npm run connect` writes .env.switch, then
@@ -39,9 +44,7 @@ services:
       retries: 20
 
   api:
-    build:
-      context: ${DHVAJ_PORTAL_DIR:-../dhvaj-portal}
-      dockerfile: apps/api/Dockerfile
+    image: ${DHVAJ_PORTAL_IMAGE:-ghcr.io/intenzee/dhvaj-desk-portal}-api:${DHVAJ_PORTAL_TAG:-demo}
     # Provision roles → migrate → seed the demo firm → start as hsdg_app.
     command: ['node', 'scripts/deploy/start.mjs']
     depends_on:
@@ -77,12 +80,7 @@ services:
       start_period: 20s
 
   web:
-    build:
-      context: ${DHVAJ_PORTAL_DIR:-../dhvaj-portal}
-      dockerfile: apps/web/Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-3101}/api/v1
-        NEXT_PUBLIC_CLIENT_UPLOAD_ENABLED: 'true'
+    image: ${DHVAJ_PORTAL_IMAGE:-ghcr.io/intenzee/dhvaj-desk-portal}-web:${DHVAJ_PORTAL_TAG:-demo}
     environment:
       PORT: 3000
     ports:

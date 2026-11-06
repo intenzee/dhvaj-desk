@@ -1,0 +1,21 @@
+# Build the portal images from source instead of pulling them:
+#
+#   git clone -b switch-integration <Dhvaj Portal repo> ../dhvaj-portal
+#   docker compose -f docker-compose.yml -f compose.build.yml up -d --build
+#
+# The first build takes about 30 minutes on a 4 GB, 1-CPU Docker VM.
+services:
+  api:
+    image: dhvaj-desk-portal-api:local
+    build:
+      context: ${DHVAJ_PORTAL_DIR:-../dhvaj-portal}
+      dockerfile: apps/api/Dockerfile
+  web:
+    image: dhvaj-desk-portal-web:local
+    build:
+      context: ${DHVAJ_PORTAL_DIR:-../dhvaj-portal}
+      dockerfile: apps/web/Dockerfile
+      args:
+        # The browser calls the API here; it is compiled into the web bundle.
+        NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-3101}/api/v1
+        NEXT_PUBLIC_CLIENT_UPLOAD_ENABLED: 'true'

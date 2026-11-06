@@ -1,9 +1,16 @@
 # Dhvaj Desk
 
+[![Stack](https://github.com/intenzee/dhvaj-desk/actions/workflows/stack.yml/badge.svg)](https://github.com/intenzee/dhvaj-desk/actions/workflows/stack.yml)
+
 **A chartered accountants' firm run from team chat.** Four Claude Code agents
 and the firm's people work side by side in six [Switch](https://github.com/sandbox-quantum/switch)
 rooms, one per desk, on live data from the Dhvaj Portal. People keep the pen:
 anything signed, filed or sent to a client needs a person's yes.
+
+**See it first:** [a run in the rooms](docs/transcript.md), exported straight
+from Switch: the agents' brief, review and notices, unedited. Every push boots
+the portal from its images, seeds the demo firm and drives all 27 tools as
+the agents' own portal users ([Stack](.github/workflows/stack.yml)).
 
 ## The problem
 
@@ -129,38 +136,44 @@ message, and agents are told never to take an agent's yes.
 
 ## Run it
 
-You need Docker, Node 20+, and [Switch Console](https://github.com/sandbox-quantum/switch)
+### The portal and every tool, in two commands (no Switch needed)
+
+You need Docker and Node 20+.
+
+```sh
+git clone https://github.com/intenzee/dhvaj-desk && cd dhvaj-desk && npm install
+cp .env.example .env
+docker compose up -d && docker compose logs -f seed   # waits until the demo story is seeded
+npm run test:mcp && npm run test:full                 # all 27 tools, as the agents
+```
+
+The portal is at http://localhost:3100 — sign in as `mp@dhvaj.in` (managing
+partner), `partner.a@dhvaj.in` or `manager.x@dhvaj.in`; the agents are
+`agent-desk@dhvaj.demo` and so on. The API is at http://localhost:3101/api/v1.
+The images are `ghcr.io/intenzee/dhvaj-desk-portal-{api,web}:demo` (amd64 and
+arm64). With the portal's source next to this folder you can build them
+instead: `docker compose -f docker-compose.yml -f compose.build.yml up -d --build`.
+
+### The firm in Switch
+
+You also need [Switch Console](https://github.com/sandbox-quantum/switch)
 (macOS) with Claude Code signed in.
 
-1. **Clone both repos side by side.**
-   ```sh
-   git clone <this repo> dhvaj-desk
-   git clone -b switch-integration <Dhvaj Portal repo> dhvaj-portal
-   cd dhvaj-desk && npm install
-   ```
-2. **Start the portal with the demo firm.**
-   ```sh
-   cp .env.example .env        # demo values; DHVAJ_PORTAL_DIR points at ../dhvaj-portal
-   docker compose up -d --build   # first build: about 30 min on a 4 GB / 1-CPU Docker VM
-   docker compose logs -f seed # wait until it exits: story seeded, then reset to its start
-   ```
-   The portal is at http://localhost:3100 (sign in as `mp@dhvaj.in`,
-   `partner.a@dhvaj.in` or `manager.x@dhvaj.in`), the API at
-   http://localhost:3101/api/v1. Everything in it is made up.
-3. **Check every tool end to end:** `npm run test:mcp` (and `npm run test:full`
-   for the Full tier).
-4. **Build the agents' folders:** `npm run agents`.
-5. **Start Switch Console**, then deploy the template:
-   `npm run deploy` (or deploy `switch/dhvaj-desk.template.yaml` in Console
-   with `checkout` set to this folder). Re-deploy with `npm run deploy -- --replace`.
-6. **Connect the portal to the rooms:** `npm run connect`, then
+1. **Build the agents' folders:** `npm run agents` (each gets a `.mcp.json`
+   for dhvaj-mcp, signed in as its own portal user, and its `CLAUDE.md`).
+2. **Deploy the template:** `npm run deploy` (or deploy
+   `switch/dhvaj-desk.template.yaml` in Console with `checkout` set to this
+   folder). It checks that all six rooms were made; re-deploy with
+   `npm run deploy -- --replace`.
+3. **Connect the portal to the rooms:** `npm run connect`, then
    `docker compose up -d api` so the portal picks up `.env.switch`.
    With Console's local server both commands find the server and its local
    admin login by themselves; for another server set `SWITCH_URL`,
    `SWITCH_EMAIL` and `SWITCH_PASSWORD`.
-7. **Start the live bridge:** `DHVAJ_CRON_SECRET=<CRON_SECRET from .env> npm run bridge`.
-8. **Open the rooms** in Console or Mattermost and try the story below.
-   `npm run demo:reset` puts the story back to its start at any time.
+4. **Start the live bridge:** `DHVAJ_CRON_SECRET=<CRON_SECRET from .env> npm run bridge`.
+5. **Open the rooms** in Console or Mattermost: each agent has answered its
+   kickoff. Try the story below; `npm run demo:reset` puts it back to its
+   start, and `npm run transcript` writes what happened to `docs/transcript.md`.
 
 ## The demo story
 
@@ -192,8 +205,12 @@ You need Docker, Node 20+, and [Switch Console](https://github.com/sandbox-quant
 | `switch/deploy.mjs`, `switch/connect.mjs` | deploy the template; register `dhvaj-portal` and join it to the rooms |
 | `bridge/bridge.mjs` | the portal's live stream → the agents' rooms; runs the portal's local cron |
 | `seed/demo-story.mjs`, `seed/gst-3b.mjs` | the demo firm's clients, filings and agent users, made through the portal API |
+| `seed/acme-15cb.mjs` | Acme's Form 146 (15CB), drafted afresh whenever none waits to be signed |
 | `scripts/demo-reset.mjs` | put the demo story back to its start |
+| `scripts/transcript.mjs` | export the rooms' conversation from Switch to Markdown |
 | `docker-compose.yml`, `.env.example` | the portal, its database and the seed, in one command |
+| `compose.build.yml` | build the portal images from source instead |
+| `.github/workflows/stack.yml` | CI: boot the stack, seed it, drive every tool |
 
 ## What was built during the hackathon
 
@@ -203,13 +220,13 @@ Built for Dhvaj × Switch, Nov 5–7 2026:
 
 - **This repo:** dhvaj-mcp and its 27 tools, the four agents' instructions,
   the Switch template, deploy and connect scripts, the live bridge, the demo
-  story, the demo reset, docker compose.
+  story, the demo reset, the transcript export, docker compose and the stack CI.
 - **In the portal (branch `switch-integration`):** `SwitchChannel` in the
   notification outbox (rooms by name, @mentions per notification type);
   client uploads through a secure link now notify the team; signing a
   certificate notifies the preparer and reviewer (`certificate_signed`); a
   deleted document no longer ticks its filing step; the deploy entrypoint runs
-  against a local Postgres.
+  against a local Postgres; a workflow builds the demo images.
 
 ## Next steps
 
