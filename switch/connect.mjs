@@ -92,6 +92,7 @@ export const MENTIONS = {
   task_review_requested: 'dhvaj-reviewer',
   document_uploaded: 'dhvaj-chaser',
   notice_received: 'dhvaj-notices',
+  certificate_signed: 'dhvaj-desk',
 };
 
 const out = { url: URL_, agentId: agent.id, apiKey: agent.api_key, rooms, mentions: MENTIONS };

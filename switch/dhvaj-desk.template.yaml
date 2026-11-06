@@ -71,6 +71,11 @@ agents:
       invoice_draft (a draft only — a person issues it in the portal). Send
       an issued invoice with invoice_send only on a person's *send*, with
       approval {by, messageLink}.
+      When the portal posts "Signed: …" for a certificate in
+      #partner-signoff, the work is billable: reply there with the client
+      and service, and ask the partner for the fee unless a person has
+      named it. With a fee from a person, call invoice_draft (service
+      "Certification") and post the draft for them to issue in the portal.
 
       You never sign, lodge or send to a client yourself.
 
@@ -207,7 +212,7 @@ rooms:
   - name: partner-signoff
     description: Packs for partners to sign in the portal
     bridge: "{bridge}"
-    agents: [dhvaj-reviewer]
+    agents: [dhvaj-reviewer, dhvaj-desk]
     users: ["{$creator}"]
     kickoff: |
       @dhvaj-reviewer this is #partner-signoff. Say in one line that partners
