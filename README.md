@@ -141,7 +141,7 @@ You need Docker, Node 20+, and [Switch Console](https://github.com/sandbox-quant
 2. **Start the portal with the demo firm.**
    ```sh
    cp .env.example .env        # demo values; DHVAJ_PORTAL_DIR points at ../dhvaj-portal
-   docker compose up -d --build
+   docker compose up -d --build   # first build: about 30 min on a 4 GB / 1-CPU Docker VM
    docker compose logs -f seed # wait until it exits: story seeded, then reset to its start
    ```
    The portal is at http://localhost:3100 (sign in as `mp@dhvaj.in`,
