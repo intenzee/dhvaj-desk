@@ -54,7 +54,25 @@ await call(desk, 'due_list', { stream: 'payroll', client: 'Sharma' });
 
 // ── chaser: preview, link, send gate ──
 const chaser = await connect('agent-chaser@dhvaj.demo');
-const preview = await call(chaser, 'chase_preview', { client: 'Sharma Traders' }, { show: 900 });
+let preview = await call(chaser, 'chase_preview', { client: 'Sharma Traders' }, { show: 900 });
+if (!preview.drafts?.length) {
+  // Nothing waiting on the client yet (a fresh or reset demo): the chaser asks
+  // for October's sales register with its own upload link, as in the story.
+  const asked = await call(chaser, 'request_document', {
+    client: 'Sharma Traders',
+    form: 'GSTR-1',
+    period: 'October',
+    document: 'sales register',
+    requestedInfo: 'Sales register for October 2026 (smoke test)',
+  });
+  if (!asked.uploadUrl?.includes('/client-upload/')) {
+    failures++;
+    console.log('✗ request_document gave no upload link');
+  }
+  // The same request twice is refused: one open request per document.
+  await call(chaser, 'request_document', { client: 'Sharma Traders', form: 'GSTR-1', period: 'October', document: 'sales register' }, { expectError: true });
+  preview = await call(chaser, 'chase_preview', { client: 'Sharma Traders' }, { show: 900 });
+}
 const dep = status.waitingOnClient?.[0];
 if (dep) {
   // A senior (the chaser) may not mint links — the portal says so; the desk (a manager) may.

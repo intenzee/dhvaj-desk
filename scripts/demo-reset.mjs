@@ -70,7 +70,7 @@ try {
   const pf = cal.find((i) => /PF|ECR/i.test(i.formLabel) && i.periodKey === '2026-10');
   if (pf) {
     let ws = await mp.get(`/compliance-instances/${pf.id}`);
-    if (/^Riya/.test(ws.task?.assigneeName ?? '')) {
+    if (!/^Manager X/.test(ws.task?.assigneeName ?? '')) {
       const r = await mp.post('/compliance/runs/assign', { instanceIds: [pf.id], preparerId: person(/^Manager X/) });
       if (r.failed?.length) throw new Error(r.failed.map((f) => f.message).join('; '));
       ws = await mp.get(`/compliance-instances/${pf.id}`);
