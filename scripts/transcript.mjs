@@ -44,7 +44,7 @@ const ist = (ms) =>
 
 function who(m) {
   const n = m.sender_name || m.sender;
-  if (n === 'dhvaj-portal') return '🏛️ **dhvaj-portal** (the portal)';
+  if (n === 'dhvaj-portal') return '🏛️ **dhvaj-portal**';
   if (/^dhvaj-/.test(n)) return `🤖 **${n}**`;
   if (n === 'admin') return '🧭 **template kickoff**';
   return `🧑 **${n}**`;
@@ -61,7 +61,8 @@ const parts = [
   '# Dhvaj Desk — a run in the rooms',
   '',
   `Exported from Switch with \`npm run transcript\` on ${ist(Date.now())}. Every line below is what was`,
-  'posted in the room, unedited: 🤖 an agent, 🏛️ the portal posting as it happens, 🧑 a person.',
+  'posted in the room, unedited: 🤖 an agent, 🧑 a person, 🧭 the kickoff from the Switch template,',
+  "🏛️ the portal's own account (its live posts, or a kickoff re-sent through it).",
   'Figures, dates and names come from the demo firm in the Dhvaj Portal (all made up).',
   '',
 ];
